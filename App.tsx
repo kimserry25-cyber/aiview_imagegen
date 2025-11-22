@@ -1,11 +1,9 @@
-
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Download, X, Sparkles, CheckCircle2, RefreshCw, Trash2, Settings, Key } from 'lucide-react';
+import React, { useState, useRef, useCallback } from 'react';
+import { Upload, Image as ImageIcon, Download, X, Sparkles, CheckCircle2, RefreshCw, Trash2 } from 'lucide-react';
 import { ASPECT_RATIOS, TABS, VIEWS, ANGLES, EXPRESSIONS } from './constants';
 import { AspectRatioValue, GeneratedImage, TabId, OptionItem } from './types';
 import { generateImageVariation } from './services/geminiService';
 import { Button } from './components/Button';
-import { ApiKeyModal } from './components/ApiKeyModal';
 import { 
   IconSquare, IconPortrait, IconLandscape, IconTall, IconWide, 
   IconClassicPortrait, IconClassicLandscape, IconCinema, IconPanorama, 
@@ -28,10 +26,6 @@ const getRatioIcon = (type: string) => {
   }
 };
 
-// Simple obfuscation for local storage (not true encryption, but hides from plain view)
-const encryptKey = (key: string) => btoa(key);
-const decryptKey = (key: string) => atob(key);
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('views'); 
   // Allow null to indicate no user selection yet (prevents sticking to default on new upload)
@@ -46,30 +40,7 @@ export default function App() {
   const [promptText, setPromptText] = useState("");
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
 
-  // API Key State
-  const [apiKey, setApiKey] = useState<string>('');
-  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Load API Key on Mount
-  useEffect(() => {
-    const storedKey = localStorage.getItem('gemini_api_key_secure');
-    if (storedKey) {
-      try {
-        setApiKey(decryptKey(storedKey));
-      } catch (e) {
-        console.error("Failed to decrypt key", e);
-        localStorage.removeItem('gemini_api_key_secure');
-      }
-    }
-    // REMOVED: Fallback to process.env.API_KEY to strictly enforce external key usage
-  }, []);
-
-  const handleSaveApiKey = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem('gemini_api_key_secure', encryptKey(key));
-  };
 
   // Handle Image Upload
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,17 +83,11 @@ export default function App() {
 
   // Generate Function
   const handleGenerate = useCallback(async () => {
-    if (!apiKey) {
-      setIsKeyModalOpen(true);
-      return;
-    }
-
     if (!uploadedImage) return;
 
     setIsGenerating(true);
     try {
       const generatedBase64 = await generateImageVariation({
-        apiKey: apiKey,
         imageBase64: uploadedImage.base64,
         mimeType: uploadedImage.mimeType,
         prompt: promptText,
@@ -151,7 +116,7 @@ export default function App() {
     } finally {
       setIsGenerating(false);
     }
-  }, [uploadedImage, selectedRatio, selectedView, selectedAngle, selectedExpression, promptText, apiKey]);
+  }, [uploadedImage, selectedRatio, selectedView, selectedAngle, selectedExpression, promptText]);
 
   const resetOptions = () => {
     setSelectedView('');
@@ -289,13 +254,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0a0e17] text-slate-200 p-4 md:p-8 flex flex-col font-sans">
       
-      <ApiKeyModal 
-        isOpen={isKeyModalOpen} 
-        onClose={() => setIsKeyModalOpen(false)} 
-        onSave={handleSaveApiKey}
-        existingKey={apiKey}
-      />
-
       {/* Header */}
       <header className="mb-8 flex items-center justify-between max-w-[1600px] mx-auto w-full">
         <div className="flex items-center gap-3">
@@ -306,17 +264,6 @@ export default function App() {
             이미지 뷰 생성기
           </h1>
         </div>
-        
-        <Button 
-            variant="outline" 
-            onClick={() => setIsKeyModalOpen(true)}
-            className={`border-slate-700 hover:border-blue-500/50 hover:bg-slate-800 ${!apiKey ? 'animate-pulse border-blue-500 text-blue-400' : ''}`}
-        >
-            <div className="flex items-center gap-2">
-               {apiKey ? <Settings className="w-4 h-4" /> : <Key className="w-4 h-4" />}
-               <span className="hidden sm:inline">{apiKey ? 'Settings' : 'Configure API Key'}</span>
-            </div>
-        </Button>
       </header>
 
       <main className="flex-grow max-w-[1600px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -456,24 +403,18 @@ export default function App() {
                 />
                 <div className="p-1">
                    <Button 
-                      variant={!apiKey ? "secondary" : "primary"}
+                      variant="primary"
                       size="sm"
                       onClick={handleGenerate}
                       disabled={isGenerating}
-                      className={`h-9 shadow-none ${!apiKey ? 'text-blue-400' : ''}`}
+                      className="h-9 shadow-none"
                    >
                       {isGenerating ? (
                          <RefreshCw className="w-4 h-4 animate-spin" />
                       ) : (
-                        !apiKey ? (
-                            <>
-                              Set API Key <Key className="w-3 h-3 ml-2" />
-                            </>
-                        ) : (
-                            <>
-                              Generate <Sparkles className="w-3 h-3 ml-2" />
-                            </>
-                        )
+                        <>
+                          Generate <Sparkles className="w-3 h-3 ml-2" />
+                        </>
                       )}
                    </Button>
                 </div>

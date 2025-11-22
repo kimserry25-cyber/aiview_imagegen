@@ -1,9 +1,7 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { AspectRatioValue } from "../types";
 
 interface GenerateImageProps {
-  apiKey: string;
   imageBase64: string;
   mimeType: string;
   prompt: string;
@@ -31,27 +29,7 @@ const getApiAspectRatio = (ratio: AspectRatioValue): '1:1' | '3:4' | '4:3' | '9:
   }
 };
 
-/**
- * Tests the API key connection by making a lightweight request.
- */
-export const testApiKeyConnection = async (apiKey: string): Promise<boolean> => {
-  try {
-    const ai = new GoogleGenAI({ apiKey });
-    // We try to get a model to see if the key is valid. 
-    // A simple generative call is the most reliable test.
-    await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: 'Test connection',
-    });
-    return true;
-  } catch (error) {
-    console.error("API Key validation failed:", error);
-    return false;
-  }
-};
-
 export const generateImageVariation = async ({
-  apiKey,
   imageBase64,
   mimeType,
   prompt,
@@ -61,10 +39,8 @@ export const generateImageVariation = async ({
   expression
 }: GenerateImageProps): Promise<string | null> => {
   try {
-    if (!apiKey) throw new Error("API Key is missing");
-
-    // Initialize client with the provided key
-    const ai = new GoogleGenAI({ apiKey });
+    // Initialize client with the environment variable key
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const changes = [];
     if (view) changes.push(`Camera View: ${view}`);
