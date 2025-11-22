@@ -9,7 +9,6 @@ interface GenerateImageProps {
   view?: string;
   angle?: string;
   expression?: string;
-  additionalTags?: string[];
 }
 
 // Helper to map user requested ratio to API supported ratio
@@ -39,7 +38,7 @@ export const generateImageVariation = async ({
   expression
 }: GenerateImageProps): Promise<string | null> => {
   try {
-    // Initialize client with the environment variable key
+    // Initialize client with the environment API key
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const changes = [];

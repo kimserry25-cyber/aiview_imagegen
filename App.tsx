@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Upload, Image as ImageIcon, Download, X, Sparkles, CheckCircle2, RefreshCw, Trash2 } from 'lucide-react';
+import { Upload, Image as ImageIcon, Download, Sparkles, CheckCircle2, RefreshCw, Trash2, X } from 'lucide-react';
 import { ASPECT_RATIOS, TABS, VIEWS, ANGLES, EXPRESSIONS } from './constants';
 import { AspectRatioValue, GeneratedImage, TabId, OptionItem } from './types';
 import { generateImageVariation } from './services/geminiService';
@@ -94,7 +94,7 @@ export default function App() {
         aspectRatio: selectedRatio || '1:1', // Default to 1:1 if null
         view: selectedView,
         angle: selectedAngle,
-        expression: selectedExpression,
+        expression: selectedExpression
       });
 
       if (generatedBase64) {
@@ -112,7 +112,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Generation failed", error);
-      alert("Failed to generate image. Please check your API Key quota or internet connection.");
+      // alert("Failed to generate image."); // Optional: removed for cleaner UI, error is logged
     } finally {
       setIsGenerating(false);
     }
