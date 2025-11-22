@@ -38,7 +38,7 @@ export const generateImageVariation = async ({
   view,
   angle,
   expression
-}: GenerateImageProps): Promise<string | null> => {
+}: GenerateImageProps): Promise<string> => {
   try {
     if (!apiKey) {
       throw new Error("API Key is missing");
@@ -107,9 +107,20 @@ export const generateImageVariation = async ({
       },
     });
 
-    // Extract image from response safely
-    const parts = response.candidates?.[0]?.content?.parts;
-    if (parts) {
+    // Check for safety blocking or other finish reasons
+    const candidate = response.candidates?.[0];
+    if (!candidate) {
+        throw new Error("The AI model returned no results. It might be overloaded.");
+    }
+    
+    if (candidate.finishReason !== 'STOP') {
+        // Common reasons: SAFETY, RECITATION, OTHER
+        throw new Error(`Generation stopped. Reason: ${candidate.finishReason}. This often happens if the image triggers safety filters.`);
+    }
+
+    // Extract image from response safely using optional chaining
+    const parts = candidate.content?.parts;
+    if (parts && parts.length > 0) {
       for (const part of parts) {
         if (part.inlineData) {
           return `data:image/png;base64,${part.inlineData.data}`;
@@ -117,11 +128,10 @@ export const generateImageVariation = async ({
       }
     }
     
-    console.warn("No image data found in response");
-    return null;
+    throw new Error("Generation successful, but no image data was found in the response.");
 
   } catch (error) {
     console.error("Error generating image:", error);
-    throw error;
+    throw error; // Re-throw to be handled by the UI
   }
 };

@@ -134,12 +134,22 @@ export default function App() {
         };
         setGeneratedImages(prev => [newImage, ...prev]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Generation failed", error);
-      // Check for API Key errors
-      if (error instanceof Error && (error.message.includes('API Key') || error.message.includes('403'))) {
+      
+      let errorMessage = "Unknown error occurred.";
+      if (error instanceof Error) {
+          errorMessage = error.message;
+      }
+      
+      // Provide user-friendly feedback
+      if (errorMessage.includes('API Key') || errorMessage.includes('403')) {
         alert("Invalid API Key. Please check your settings.");
         setIsApiKeyModalOpen(true);
+      } else if (errorMessage.includes('SAFETY')) {
+        alert("Generation blocked by Safety Filters. Try a different image or prompt.");
+      } else {
+        alert(`Generation Error: ${errorMessage}`);
       }
     } finally {
       setIsGenerating(false);
