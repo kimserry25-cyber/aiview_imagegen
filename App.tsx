@@ -107,7 +107,7 @@ export default function App() {
     }
 
     if (!uploadedImage) {
-      alert("이미지를 먼저 업로드해주세요. (Please upload an image first.)");
+      alert("이미지를 먼저 업로드해주세요.");
       return;
     }
 
@@ -143,16 +143,27 @@ export default function App() {
       let errorMessage = "Unknown error occurred.";
       if (error instanceof Error) {
           errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+          // Handle cases where error is an object (like the 429 JSON response)
+          errorMessage = JSON.stringify(error);
+      } else {
+          errorMessage = String(error);
       }
       
-      // Provide user-friendly feedback
-      if (errorMessage.includes('API Key') || errorMessage.includes('403')) {
-        alert("Invalid API Key. Please check your settings.");
+      // Provide user-friendly Korean feedback
+      if (errorMessage.includes('429') || errorMessage.includes('Quota') || errorMessage.includes('RESOURCE_EXHAUSTED')) {
+        alert("⚠️ API 사용량 초과 (429 Error)\n\n무료 사용량 한도를 초과했습니다.\n잠시(1~2분) 기다렸다가 다시 시도하거나, 다른 구글 계정의 API 키를 사용해주세요.");
+      } else if (errorMessage.includes('API Key') || errorMessage.includes('403') || errorMessage.includes('PERMISSION_DENIED')) {
+        alert("⚠️ API 키 오류 (403 Error)\n\nAPI 키가 올바르지 않거나 권한이 없습니다.\n우측 상단 설정(Settings)에서 올바른 키를 다시 입력해주세요.");
         setIsApiKeyModalOpen(true);
-      } else if (errorMessage.includes('SAFETY')) {
-        alert("Generation blocked by Safety Filters. Try a different image or prompt.");
+      } else if (errorMessage.includes('SAFETY') || errorMessage.includes('blocked')) {
+        alert("⚠️ 안전 필터 감지\n\n생성하려는 이미지가 구글의 안전 기준(성적, 폭력적 등)에 의해 차단되었습니다.\n다른 이미지나 프롬프트를 사용해주세요.");
+      } else if (errorMessage.includes('503') || errorMessage.includes('Overloaded')) {
+        alert("⚠️ 서버 혼잡 (503 Error)\n\n현재 구글 AI 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.");
       } else {
-        alert(`Generation Error: ${errorMessage}`);
+        // Clean up very long error messages
+        const shortError = errorMessage.length > 200 ? errorMessage.substring(0, 200) + "..." : errorMessage;
+        alert(`⚠️ 생성 오류 발생\n\n${shortError}`);
       }
     } finally {
       setIsGenerating(false);
