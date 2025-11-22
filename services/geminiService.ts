@@ -32,6 +32,61 @@ const getApiAspectRatio = (ratio: AspectRatioValue): '1:1' | '3:4' | '4:3' | '9:
 // Helper function to wait (sleep)
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Helper function to resize and compress image
+// This is crucial for preventing 429 errors on Free Tier by reducing token count
+const resizeImage = async (base64Str: string, maxWidth = 1024): Promise<{ base64: string, mimeType: string }> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${base64Str}`; // Assuming input is base64 raw data without prefix, adding generic prefix for loading
+    // Use a more generic prefix handling if needed, but for this app setup:
+    // The uploadedImage.base64 usually comes without the data:image/... prefix in the main App component
+    // But let's handle both cases to be safe
+    if (!base64Str.startsWith('data:image')) {
+        img.src = `data:image/jpeg;base64,${base64Str}`;
+    } else {
+        img.src = base64Str;
+    }
+
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxWidth || height > maxWidth) {
+        if (width > height) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        } else {
+          width = Math.round((width * maxWidth) / height);
+          height = maxWidth;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        reject(new Error("Could not get canvas context"));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // Export as JPEG with 0.8 quality for optimal token usage
+      const newDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      const newBase64 = newDataUrl.split(',')[1];
+      
+      resolve({
+        base64: newBase64,
+        mimeType: 'image/jpeg'
+      });
+    };
+    
+    img.onerror = (err) => reject(err);
+  });
+};
+
 export const generateImageVariation = async ({
   apiKey,
   imageBase64,
@@ -46,6 +101,15 @@ export const generateImageVariation = async ({
   // Retry configuration
   const MAX_RETRIES = 3;
   let attempt = 0;
+
+  // Optimize image before sending
+  // This is the key fix for "Quota Exceeded" on fresh keys
+  let optimizedImage = { base64: imageBase64, mimeType: mimeType };
+  try {
+     optimizedImage = await resizeImage(imageBase64);
+  } catch (e) {
+     console.warn("Image optimization failed, falling back to original", e);
+  }
 
   while (attempt <= MAX_RETRIES) {
     try {
@@ -103,8 +167,8 @@ export const generateImageVariation = async ({
             },
             {
               inlineData: {
-                data: imageBase64,
-                mimeType: mimeType,
+                data: optimizedImage.base64, // Use the optimized (resized) image
+                mimeType: optimizedImage.mimeType,
               },
             },
           ],
