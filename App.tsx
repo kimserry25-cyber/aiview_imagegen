@@ -106,7 +106,10 @@ export default function App() {
       return;
     }
 
-    if (!uploadedImage) return;
+    if (!uploadedImage) {
+      alert("이미지를 먼저 업로드해주세요. (Please upload an image first.)");
+      return;
+    }
 
     setIsGenerating(true);
     try {
