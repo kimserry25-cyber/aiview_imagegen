@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { AspectRatioValue } from "../types";
 
@@ -33,18 +34,15 @@ const getApiAspectRatio = (ratio: AspectRatioValue): '1:1' | '3:4' | '4:3' | '9:
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Helper function to resize and compress image
-// This is crucial for preventing 429 errors on Free Tier by reducing token count
-const resizeImage = async (base64Str: string, maxWidth = 1024): Promise<{ base64: string, mimeType: string }> => {
+// Drastically reduced to 512px / 0.5 quality to ensure Free Tier compliance
+const resizeImage = async (base64Str: string, maxWidth = 512): Promise<{ base64: string, mimeType: string }> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.src = `data:image/png;base64,${base64Str}`; // Assuming input is base64 raw data without prefix, adding generic prefix for loading
-    // Use a more generic prefix handling if needed, but for this app setup:
-    // The uploadedImage.base64 usually comes without the data:image/... prefix in the main App component
-    // But let's handle both cases to be safe
-    if (!base64Str.startsWith('data:image')) {
-        img.src = `data:image/jpeg;base64,${base64Str}`;
-    } else {
+    // Handle potential missing prefixes or existing prefixes
+    if (base64Str.startsWith('data:image')) {
         img.src = base64Str;
+    } else {
+        img.src = `data:image/jpeg;base64,${base64Str}`;
     }
 
     img.onload = () => {
@@ -73,8 +71,8 @@ const resizeImage = async (base64Str: string, maxWidth = 1024): Promise<{ base64
 
       ctx.drawImage(img, 0, 0, width, height);
       
-      // Export as JPEG with 0.8 quality for optimal token usage
-      const newDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      // Export as JPEG with 0.5 quality for MAXIMUM token savings
+      const newDataUrl = canvas.toDataURL('image/jpeg', 0.5);
       const newBase64 = newDataUrl.split(',')[1];
       
       resolve({
@@ -99,16 +97,17 @@ export const generateImageVariation = async ({
 }: GenerateImageProps): Promise<string> => {
   
   // Retry configuration
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 2; // Reduced retries for Quota errors
   let attempt = 0;
 
   // Optimize image before sending
-  // This is the key fix for "Quota Exceeded" on fresh keys
-  let optimizedImage = { base64: imageBase64, mimeType: mimeType };
+  // Force optimization to prevent 429 errors
+  let optimizedImage;
   try {
-     optimizedImage = await resizeImage(imageBase64);
+     optimizedImage = await resizeImage(imageBase64); // Defaults to 512px
   } catch (e) {
-     console.warn("Image optimization failed, falling back to original", e);
+     console.warn("Image optimization failed, falling back to original (High Risk of 429)", e);
+     optimizedImage = { base64: imageBase64, mimeType: mimeType };
   }
 
   while (attempt <= MAX_RETRIES) {
@@ -133,27 +132,18 @@ export const generateImageVariation = async ({
 
       // Prompt engineering focused on "Editing/Modification" FROM ORIGINAL
       const fullPrompt = `
-      Act as a professional photo editor and retoucher. 
+      Act as a professional photo editor. 
       
-      Reference Image: Provided below (This is the ONLY source material).
-      Task: Re-generate this EXACT image but apply the specific modifications listed below.
+      Reference Image: Provided below.
+      Task: Re-generate this image applying these modifications:
       
-      CRITICAL INSTRUCTION: 
-      - You must ALWAYS start from the provided reference image. 
-      - Do NOT use any previous generated state or context. 
-      - Treat this as a fresh modification of the original file.
-      
-      STRICT CONSTRAINTS:
-      1. PRESERVE IDENTITY: The main subject must remain recognizable as the SAME individual from the original source image.
-      2. PRESERVE OUTFIT: Keep the subject's clothing and accessories consistent with the original source.
-      3. PRESERVE ATMOSPHERE: Maintain the original lighting and color grading unless explicitly asked to change.
-      
-      REQUIRED MODIFICATIONS:
-      ${changes.length > 0 ? changes.join('\n') : 'No specific structural changes. Enhance fidelity and details.'}
+      ${changes.length > 0 ? changes.join('\n') : 'Enhance details.'}
       
       ${userInstruction}
       
-      Output: A high-quality photorealistic image.
+      STRICT RULES:
+      - Keep the main subject identity and clothing from the reference.
+      - Output photorealistic quality.
       `;
       
       const apiAspectRatio = getApiAspectRatio(aspectRatio);
@@ -167,7 +157,7 @@ export const generateImageVariation = async ({
             },
             {
               inlineData: {
-                data: optimizedImage.base64, // Use the optimized (resized) image
+                data: optimizedImage.base64,
                 mimeType: optimizedImage.mimeType,
               },
             },
@@ -183,12 +173,10 @@ export const generateImageVariation = async ({
       // Check for safety blocking or other finish reasons
       const candidate = response.candidates?.[0];
       if (!candidate) {
-          // This might be a transient API issue, treat as retriable
           throw new Error("NO_CANDIDATES"); 
       }
       
       if (candidate.finishReason !== 'STOP') {
-          // Safety blocks are NOT retriable. They will fail every time with the same prompt.
           throw new Error(`Generation stopped. Reason: ${candidate.finishReason}. This often happens if the image triggers safety filters.`);
       }
 
@@ -206,19 +194,22 @@ export const generateImageVariation = async ({
 
     } catch (error: any) {
       const errorMessage = error.message || JSON.stringify(error);
+      // Check specifically for Quota errors
       const isRateLimit = errorMessage.includes('429') || errorMessage.includes('Quota') || errorMessage.includes('RESOURCE_EXHAUSTED');
       const isServerOverload = errorMessage.includes('503') || errorMessage.includes('Overloaded') || errorMessage === "NO_CANDIDATES";
 
+      // Only retry if it's NOT a strict token quota issue (sometimes 429 is just rate limit, sometimes it's hard daily limit)
+      // But for user experience, we try a few times with backoff
       if ((isRateLimit || isServerOverload) && attempt < MAX_RETRIES) {
         attempt++;
-        const delay = 2000 * Math.pow(2, attempt - 1); // Exponential backoff: 2s, 4s, 8s
-        console.log(`Attempt ${attempt} failed. Retrying in ${delay}ms...`);
+        // Longer wait time for rate limits
+        const delay = 3000 * Math.pow(2, attempt - 1); // 3s, 6s
+        console.log(`Attempt ${attempt} failed (${isRateLimit ? 'Rate Limit' : 'Server Error'}). Retrying in ${delay}ms...`);
         await wait(delay);
-        continue; // Retry the loop
+        continue; 
       }
       
-      // If we ran out of retries or it's a non-retriable error (like Safety, 403), throw it
-      console.error("Error generating image after retries:", error);
+      console.error("Error generating image:", error);
       throw error; 
     }
   }
