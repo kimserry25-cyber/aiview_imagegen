@@ -29,6 +29,9 @@ const getApiAspectRatio = (ratio: AspectRatioValue): '1:1' | '3:4' | '4:3' | '9:
   }
 };
 
+// Helper function to wait (sleep)
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export const generateImageVariation = async ({
   apiKey,
   imageBase64,
@@ -39,99 +42,122 @@ export const generateImageVariation = async ({
   angle,
   expression
 }: GenerateImageProps): Promise<string> => {
-  try {
-    if (!apiKey) {
-      throw new Error("API Key is missing");
-    }
+  
+  // Retry configuration
+  const MAX_RETRIES = 3;
+  let attempt = 0;
 
-    // Initialize client with the provided API key
-    const ai = new GoogleGenAI({ apiKey: apiKey });
+  while (attempt <= MAX_RETRIES) {
+    try {
+      if (!apiKey) {
+        throw new Error("API Key is missing");
+      }
 
-    const changes = [];
-    if (view) changes.push(`Camera View: ${view}`);
-    if (angle) changes.push(`Camera Angle/Shot: ${angle}`);
-    if (expression) changes.push(`Facial Expression: ${expression}`);
-    
-    if (['2:3', '3:2', '21:9', '1:2', '2:1'].includes(aspectRatio)) {
-        changes.push(`Composition Aspect Ratio: ${aspectRatio}`);
-    }
+      // Initialize client with the provided API key
+      const ai = new GoogleGenAI({ apiKey: apiKey });
 
-    const userInstruction = prompt ? `User Custom Instruction: ${prompt}` : '';
+      const changes = [];
+      if (view) changes.push(`Camera View: ${view}`);
+      if (angle) changes.push(`Camera Angle/Shot: ${angle}`);
+      if (expression) changes.push(`Facial Expression: ${expression}`);
+      
+      if (['2:3', '3:2', '21:9', '1:2', '2:1'].includes(aspectRatio)) {
+          changes.push(`Composition Aspect Ratio: ${aspectRatio}`);
+      }
 
-    // Prompt engineering focused on "Editing/Modification" FROM ORIGINAL
-    const fullPrompt = `
-    Act as a professional photo editor and retoucher. 
-    
-    Reference Image: Provided below (This is the ONLY source material).
-    Task: Re-generate this EXACT image but apply the specific modifications listed below.
-    
-    CRITICAL INSTRUCTION: 
-    - You must ALWAYS start from the provided reference image. 
-    - Do NOT use any previous generated state or context. 
-    - Treat this as a fresh modification of the original file.
-    
-    STRICT CONSTRAINTS:
-    1. PRESERVE IDENTITY: The main subject must remain recognizable as the SAME individual from the original source image.
-    2. PRESERVE OUTFIT: Keep the subject's clothing and accessories consistent with the original source.
-    3. PRESERVE ATMOSPHERE: Maintain the original lighting and color grading unless explicitly asked to change.
-    
-    REQUIRED MODIFICATIONS:
-    ${changes.length > 0 ? changes.join('\n') : 'No specific structural changes. Enhance fidelity and details.'}
-    
-    ${userInstruction}
-    
-    Output: A high-quality photorealistic image.
-    `;
-    
-    const apiAspectRatio = getApiAspectRatio(aspectRatio);
+      const userInstruction = prompt ? `User Custom Instruction: ${prompt}` : '';
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          {
-            text: fullPrompt,
-          },
-          {
-            inlineData: {
-              data: imageBase64,
-              mimeType: mimeType,
+      // Prompt engineering focused on "Editing/Modification" FROM ORIGINAL
+      const fullPrompt = `
+      Act as a professional photo editor and retoucher. 
+      
+      Reference Image: Provided below (This is the ONLY source material).
+      Task: Re-generate this EXACT image but apply the specific modifications listed below.
+      
+      CRITICAL INSTRUCTION: 
+      - You must ALWAYS start from the provided reference image. 
+      - Do NOT use any previous generated state or context. 
+      - Treat this as a fresh modification of the original file.
+      
+      STRICT CONSTRAINTS:
+      1. PRESERVE IDENTITY: The main subject must remain recognizable as the SAME individual from the original source image.
+      2. PRESERVE OUTFIT: Keep the subject's clothing and accessories consistent with the original source.
+      3. PRESERVE ATMOSPHERE: Maintain the original lighting and color grading unless explicitly asked to change.
+      
+      REQUIRED MODIFICATIONS:
+      ${changes.length > 0 ? changes.join('\n') : 'No specific structural changes. Enhance fidelity and details.'}
+      
+      ${userInstruction}
+      
+      Output: A high-quality photorealistic image.
+      `;
+      
+      const apiAspectRatio = getApiAspectRatio(aspectRatio);
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+          parts: [
+            {
+              text: fullPrompt,
             },
-          },
-        ],
-      },
-      config: {
-        imageConfig: {
-          aspectRatio: apiAspectRatio,
+            {
+              inlineData: {
+                data: imageBase64,
+                mimeType: mimeType,
+              },
+            },
+          ],
         },
-      },
-    });
+        config: {
+          imageConfig: {
+            aspectRatio: apiAspectRatio,
+          },
+        },
+      });
 
-    // Check for safety blocking or other finish reasons
-    const candidate = response.candidates?.[0];
-    if (!candidate) {
-        throw new Error("The AI model returned no results. It might be overloaded.");
-    }
-    
-    if (candidate.finishReason !== 'STOP') {
-        // Common reasons: SAFETY, RECITATION, OTHER
-        throw new Error(`Generation stopped. Reason: ${candidate.finishReason}. This often happens if the image triggers safety filters.`);
-    }
+      // Check for safety blocking or other finish reasons
+      const candidate = response.candidates?.[0];
+      if (!candidate) {
+          // This might be a transient API issue, treat as retriable
+          throw new Error("NO_CANDIDATES"); 
+      }
+      
+      if (candidate.finishReason !== 'STOP') {
+          // Safety blocks are NOT retriable. They will fail every time with the same prompt.
+          throw new Error(`Generation stopped. Reason: ${candidate.finishReason}. This often happens if the image triggers safety filters.`);
+      }
 
-    // Extract image from response safely using optional chaining
-    const parts = candidate.content?.parts;
-    if (parts && parts.length > 0) {
-      for (const part of parts) {
-        if (part.inlineData) {
-          return `data:image/png;base64,${part.inlineData.data}`;
+      // Extract image from response safely using optional chaining
+      const parts = candidate.content?.parts;
+      if (parts && parts.length > 0) {
+        for (const part of parts) {
+          if (part.inlineData) {
+            return `data:image/png;base64,${part.inlineData.data}`;
+          }
         }
       }
-    }
-    
-    throw new Error("Generation successful, but no image data was found in the response.");
+      
+      throw new Error("Generation successful, but no image data was found in the response.");
 
-  } catch (error) {
-    console.error("Error generating image:", error);
-    throw error; // Re-throw to be handled by the UI
+    } catch (error: any) {
+      const errorMessage = error.message || JSON.stringify(error);
+      const isRateLimit = errorMessage.includes('429') || errorMessage.includes('Quota') || errorMessage.includes('RESOURCE_EXHAUSTED');
+      const isServerOverload = errorMessage.includes('503') || errorMessage.includes('Overloaded') || errorMessage === "NO_CANDIDATES";
+
+      if ((isRateLimit || isServerOverload) && attempt < MAX_RETRIES) {
+        attempt++;
+        const delay = 2000 * Math.pow(2, attempt - 1); // Exponential backoff: 2s, 4s, 8s
+        console.log(`Attempt ${attempt} failed. Retrying in ${delay}ms...`);
+        await wait(delay);
+        continue; // Retry the loop
+      }
+      
+      // If we ran out of retries or it's a non-retriable error (like Safety, 403), throw it
+      console.error("Error generating image after retries:", error);
+      throw error; 
+    }
   }
+  
+  throw new Error("Maximum retries exceeded.");
 };
