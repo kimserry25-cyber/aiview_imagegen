@@ -1,5 +1,5 @@
 {
-  "name": "Gemini Image Architect",
+  "name": "이미지 뷰 생성기",
   "description": "Upload an image and generate high-quality variations with customizable aspect ratios and styles using Gemini 2.5 Flash Image model.",
   "requestFramePermissions": []
 }

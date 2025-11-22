@@ -303,7 +303,7 @@ export default function App() {
             <Sparkles className="text-white w-6 h-6" />
           </div>
           <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-200 to-white">
-            Gemini Image Remix
+            이미지 뷰 생성기
           </h1>
         </div>
         
