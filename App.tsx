@@ -62,10 +62,8 @@ export default function App() {
         console.error("Failed to decrypt key", e);
         localStorage.removeItem('gemini_api_key_secure');
       }
-    } else if (process.env.API_KEY) {
-        // Fallback to env var if available (development mode), but don't save to local storage automatically
-        setApiKey(process.env.API_KEY);
     }
+    // REMOVED: Fallback to process.env.API_KEY to strictly enforce external key usage
   }, []);
 
   const handleSaveApiKey = (key: string) => {
@@ -149,7 +147,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Generation failed", error);
-      alert("Failed to generate image. Check your API Key or internet connection.");
+      alert("Failed to generate image. Please check your API Key quota or internet connection.");
     } finally {
       setIsGenerating(false);
     }
@@ -458,18 +456,24 @@ export default function App() {
                 />
                 <div className="p-1">
                    <Button 
-                      variant="primary" 
+                      variant={!apiKey ? "secondary" : "primary"}
                       size="sm"
                       onClick={handleGenerate}
                       disabled={isGenerating}
-                      className="h-9 shadow-none"
+                      className={`h-9 shadow-none ${!apiKey ? 'text-blue-400' : ''}`}
                    >
                       {isGenerating ? (
                          <RefreshCw className="w-4 h-4 animate-spin" />
                       ) : (
-                         <>
-                           Generate <Sparkles className="w-3 h-3 ml-2" />
-                         </>
+                        !apiKey ? (
+                            <>
+                              Set API Key <Key className="w-3 h-3 ml-2" />
+                            </>
+                        ) : (
+                            <>
+                              Generate <Sparkles className="w-3 h-3 ml-2" />
+                            </>
+                        )
                       )}
                    </Button>
                 </div>
