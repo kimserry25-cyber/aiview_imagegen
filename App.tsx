@@ -1,9 +1,10 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { Upload, Image as ImageIcon, Download, Sparkles, CheckCircle2, RefreshCw, Trash2, X } from 'lucide-react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { Upload, Image as ImageIcon, Download, Sparkles, CheckCircle2, RefreshCw, Trash2, X, Settings } from 'lucide-react';
 import { ASPECT_RATIOS, TABS, VIEWS, ANGLES, EXPRESSIONS } from './constants';
 import { AspectRatioValue, GeneratedImage, TabId, OptionItem } from './types';
 import { generateImageVariation } from './services/geminiService';
 import { Button } from './components/Button';
+import { ApiKeyModal } from './components/ApiKeyModal';
 import { 
   IconSquare, IconPortrait, IconLandscape, IconTall, IconWide, 
   IconClassicPortrait, IconClassicLandscape, IconCinema, IconPanorama, 
@@ -40,7 +41,24 @@ export default function App() {
   const [promptText, setPromptText] = useState("");
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
 
+  // API Key State
+  const [apiKey, setApiKey] = useState<string>('');
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load API Key on Mount
+  useEffect(() => {
+    const storedKey = localStorage.getItem('gemini_api_key');
+    if (storedKey) {
+      setApiKey(storedKey);
+    }
+  }, []);
+
+  const handleSaveApiKey = (key: string) => {
+    setApiKey(key);
+    localStorage.setItem('gemini_api_key', key);
+  };
 
   // Handle Image Upload
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -83,11 +101,17 @@ export default function App() {
 
   // Generate Function
   const handleGenerate = useCallback(async () => {
+    if (!apiKey) {
+      setIsApiKeyModalOpen(true);
+      return;
+    }
+
     if (!uploadedImage) return;
 
     setIsGenerating(true);
     try {
       const generatedBase64 = await generateImageVariation({
+        apiKey,
         imageBase64: uploadedImage.base64,
         mimeType: uploadedImage.mimeType,
         prompt: promptText,
@@ -112,11 +136,15 @@ export default function App() {
       }
     } catch (error) {
       console.error("Generation failed", error);
-      // alert("Failed to generate image."); // Optional: removed for cleaner UI, error is logged
+      // Check for API Key errors
+      if (error instanceof Error && (error.message.includes('API Key') || error.message.includes('403'))) {
+        alert("Invalid API Key. Please check your settings.");
+        setIsApiKeyModalOpen(true);
+      }
     } finally {
       setIsGenerating(false);
     }
-  }, [uploadedImage, selectedRatio, selectedView, selectedAngle, selectedExpression, promptText]);
+  }, [uploadedImage, selectedRatio, selectedView, selectedAngle, selectedExpression, promptText, apiKey]);
 
   const resetOptions = () => {
     setSelectedView('');
@@ -253,7 +281,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0a0e17] text-slate-200 p-4 md:p-8 flex flex-col font-sans">
-      
+      <ApiKeyModal 
+        isOpen={isApiKeyModalOpen} 
+        onClose={() => setIsApiKeyModalOpen(false)}
+        onSave={handleSaveApiKey}
+        existingKey={apiKey}
+      />
+
       {/* Header */}
       <header className="mb-8 flex items-center justify-between max-w-[1600px] mx-auto w-full">
         <div className="flex items-center gap-3">
@@ -264,6 +298,16 @@ export default function App() {
             이미지 뷰 생성기
           </h1>
         </div>
+        
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={() => setIsApiKeyModalOpen(true)}
+          className="text-slate-400 hover:text-white"
+        >
+          <Settings className="w-5 h-5 mr-2" />
+          {apiKey ? 'API Key Configured' : 'Set API Key'}
+        </Button>
       </header>
 
       <main className="flex-grow max-w-[1600px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8">

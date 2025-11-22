@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { AspectRatioValue } from "../types";
 
 interface GenerateImageProps {
+  apiKey: string;
   imageBase64: string;
   mimeType: string;
   prompt: string;
@@ -29,6 +30,7 @@ const getApiAspectRatio = (ratio: AspectRatioValue): '1:1' | '3:4' | '4:3' | '9:
 };
 
 export const generateImageVariation = async ({
+  apiKey,
   imageBase64,
   mimeType,
   prompt,
@@ -38,8 +40,12 @@ export const generateImageVariation = async ({
   expression
 }: GenerateImageProps): Promise<string | null> => {
   try {
-    // Initialize client with the environment API key
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    if (!apiKey) {
+      throw new Error("API Key is missing");
+    }
+
+    // Initialize client with the provided API key
+    const ai = new GoogleGenAI({ apiKey: apiKey });
 
     const changes = [];
     if (view) changes.push(`Camera View: ${view}`);
